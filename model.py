@@ -26,6 +26,7 @@ class Model:
         self._xn = np.empty((4, 256), dtype=np.float32)
         self._st = np.empty(N_STATS, dtype=np.float32)
         self._out = np.empty((1, 8), dtype=np.float32)
+        self._out0 = self._out[0]
         self._x1 = self._xn[None]
         self._s1 = self._st[None]
         ov_x = ort.OrtValue.ortvalue_from_numpy(self._x1)
@@ -47,16 +48,24 @@ class Model:
                 np.argmax(self._out[0])
         self._backend = "onnx-int8"
 
-    def _fill(self, x: Sample) -> None:
-        prep_fast(np.asarray(x.series, dtype=np.float32),
-                  float(x.meta.get("sample_rate", 1.0)), self._xn, self._st)
-
     def predict(self, x: Sample) -> int:
-        self._fill(x)
-        self._sess.run_with_iobinding(self._binding)
-        return int(np.argmax(self._out[0]))
+        prep = prep_fast
+        sess = self._sess
+        binding = self._binding
+        xn = self._xn
+        st = self._st
+        out0 = self._out0
+        prep(x.series, float(x.meta["sample_rate"]), xn, st)
+        sess.run_with_iobinding(binding)
+        return int(out0.argmax())
 
     def logits(self, x: Sample) -> np.ndarray:
-        self._fill(x)
-        self._sess.run_with_iobinding(self._binding)
-        return self._out[0].copy()
+        prep = prep_fast
+        sess = self._sess
+        binding = self._binding
+        xn = self._xn
+        st = self._st
+        out0 = self._out0
+        prep(x.series, float(x.meta["sample_rate"]), xn, st)
+        sess.run_with_iobinding(binding)
+        return out0.copy()
