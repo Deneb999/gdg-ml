@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(HERE / "lib"))
 from prep_fused import N_STATS, prep_fast
 
 ONNX = HERE / "cnn_fast_int8.onnx"
+EARLY = HERE / "early_linear.npz"
 
 class Model:
     def __init__(self):
@@ -29,6 +31,11 @@ class Model:
         self._out0 = self._out[0]
         self._x1 = self._xn[None]
         self._s1 = self._st[None]
+        z = np.load(EARLY)
+        self._ee = np.ascontiguousarray(z["w"], dtype=np.float32)
+        self._ee_b = float(z["b"])
+        thr = float(z["threshold"])
+        self._ee_thr_z = math.log(thr / (1.0 - thr))
         ov_x = ort.OrtValue.ortvalue_from_numpy(self._x1)
         ov_s = ort.OrtValue.ortvalue_from_numpy(self._s1)
         ov_o = ort.OrtValue.ortvalue_from_numpy(self._out)
@@ -55,7 +62,12 @@ class Model:
         xn = self._xn
         st = self._st
         out0 = self._out0
+        ee = self._ee
+        ee_b = self._ee_b
+        ee_thr_z = self._ee_thr_z
         prep(x.series, float(x.meta["sample_rate"]), xn, st)
+        if float(np.dot(st, ee)) + ee_b >= ee_thr_z:
+            return 1
         sess.run_with_iobinding(binding)
         return int(out0.argmax())
 
